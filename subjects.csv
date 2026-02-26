@@ -1,0 +1,4 @@
+course_code,course_name,semester,hours_per_week,is_lab
+CS301,DBMS,6,4,0
+CS302,DAA,6,4,0
+CS303,OS,6,3,1
