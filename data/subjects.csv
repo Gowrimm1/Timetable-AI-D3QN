@@ -1,0 +1,5 @@
+subject_code,subject_name,semester,hours_per_week,is_lab,lab_continuous_hours,teacher_id,room_id
+CS101,Mathematics,1,4,No,0,T1,R1
+CS102,Physics Lab,1,2,Yes,2,T2,R2
+CS201,Data Structures,2,4,No,0,T3,R1
+CS202,OS Lab,2,3,Yes,3,T4,R3
