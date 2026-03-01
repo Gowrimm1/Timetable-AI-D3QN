@@ -1,41 +1,55 @@
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from io import BytesIO
 import traceback
-from generator import generate_all_timetables
+from generator import generate_timetable
 
-app = FastAPI()
+app = FastAPI(title="MEC Timetable AI API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def root():
-    return {"message": "Timetable AI Backend Running 🚀"}
+    return {"message": "MEC Timetable AI Backend Running 🚀"}
 
 
 @app.post("/generate")
-async def generate(file: UploadFile = File(...)):
+async def generate(
+    subjects_file: UploadFile = File(...),
+    rooms_file:    UploadFile = File(...),
+    teachers_file: UploadFile = File(...),
+):
     try:
-        # Read uploaded file
-        contents = await file.read()
-        df = pd.read_csv(BytesIO(contents))
+        df_subjects  = pd.read_csv(BytesIO(await subjects_file.read()))
+        df_rooms     = pd.read_csv(BytesIO(await rooms_file.read()))
+        df_teachers  = pd.read_csv(BytesIO(await teachers_file.read()))
 
-        print("✅ CSV received successfully")
-        print(df.head())
+        df_subjects.columns  = df_subjects.columns.str.strip().str.lower()
+        df_rooms.columns     = df_rooms.columns.str.strip().str.lower()
+        df_teachers.columns  = df_teachers.columns.str.strip().str.lower()
 
-        # Generate timetable
-        result = generate_all_timetables(df)
+        print(f"✅ Received: {len(df_subjects)} subjects, "
+              f"{len(df_rooms)} rooms, {len(df_teachers)} teachers")
 
-        print("✅ Generator executed")
+        result = generate_timetable(df_subjects, df_rooms, df_teachers)
 
-        # Convert DataFrames to dictionary (preserve MON/TUE index)
-        result_dict = {
-            str(sem): timetable.to_dict(orient="index")
-            for sem, timetable in result.items()
-        }
+        # Serialise — fill NaN with "---" before converting to dict
+        serialised = {}
+        for key, df in result.items():
+            clean = df.fillna("---").astype(str)
+            # Reset index so Day column is included for division tables
+            if key != "raw":
+                clean = clean.reset_index()
+            serialised[key] = clean.to_dict(orient="list")
 
-        return result_dict
+        return serialised
 
     except Exception as e:
-        print("❌ ERROR OCCURRED:")
         traceback.print_exc()
         return {"error": str(e)}
