@@ -1,9 +1,26 @@
-course_code,subject_name,teacher_code,semester,required_hours,room_type_needed,is_honours
-CST302,Compiler Design,APR,S6,4,Theory,False
-CST304,CGIP,LMS,S6,4,Theory,False
-CST306,AAD,VBP,S6,4,Theory,False
-CST362,Python,BVP,S6,3,Theory,False
-HUT300,Economics,AG,S6,3,Theory,False
-CSL332,Networking Lab,AKJ,S6,3,Lab_Network,False
-CSD334,Mini Project,Sinu,S6,3,Lab_Project,False
-HNT301,Honours_AI,STF,S6,1,Theory,True
+course_code,subject_name,teacher_code,division,semester,required_hours,room_type_needed,is_honours
+CST302,Compiler Design,APR,CS6A,S6,4,Theory,False
+CST302,Compiler Design,APR,CS6B,S6,4,Theory,False
+CST302,Compiler Design,AFM,CS6C,S6,4,Theory,False
+CST304,CGIP,LMS,CS6A,S6,4,Theory,False
+CST304,CGIP,LMS,CS6B,S6,4,Theory,False
+CST304,CGIP,ELZ,CS6C,S6,4,Theory,False
+CST306,AAD,RHM,CS6A,S6,4,Theory,False
+CST306,AAD,VBP,CS6B,S6,4,Theory,False
+CST306,AAD,GTB,CS6C,S6,4,Theory,False
+CST308,ELE,JTM,CS6A,S6,4,Theory,False
+CST308,ELE,BVP,CS6B,S6,4,Theory,False
+CST308,ELE,ELZ,CS6C,S6,4,Theory,False
+CST362,IEFT,AG,CS6A,S6,3,Theory,False
+CST362,IEFT,LMS,CS6B,S6,3,Theory,False
+CST362,IEFT,AG,CS6C,S6,3,Theory,False
+HUT300,CCW,MRM,CS6A,S6,3,Theory,False
+HUT300,CCW,AKJ,CS6B,S6,3,Theory,False
+HUT300,CCW,SOP,CS6C,S6,3,Theory,False
+CSL332,Networking Lab,RKR,CS6A,S6,3,Lab_Network,False
+CSL332,Networking Lab,AKJ,CS6B,S6,3,Lab_Network,False
+CSL332,Networking Lab,GTB,CS6C,S6,3,Lab_Network,False
+CSD334,Mini Project,BVP,CS6A,S6,3,Lab_Project,False
+CSD334,Mini Project,SKK,CS6B,S6,3,Lab_Project,False
+CSD334,Mini Project,MRV,CS6C,S6,3,Lab_Project,False
+HNT301,Honours_MNR,STF,ALL,S6,2,Theory,True

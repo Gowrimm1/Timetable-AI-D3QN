@@ -1,58 +1,104 @@
-import pandas as pd
+"""
+export_timetable.py — MEC Timetable Export (v5)
+Clean fix: use P1-P6 as column names, add timing as first data row.
+"""
+
 import numpy as np
-from stable_baselines3 import DQN
+import pandas as pd
+import random
 from timetable_env import TimetableEnv
 
-env = TimetableEnv()
-model = DQN.load("d3qn_timetable_model")
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+PERIODS   = ["P1", "P2", "P3", "P4", "P5", "P6"]
 
-obs, _ = env.reset()
-subjects_df = pd.read_csv('subjects.csv')
+WEEKDAY_TIMES = ["9:30-10:30", "10:30-11:30", "11:30-12:30",
+                 "1:30-2:30",  "2:30-3:30",   "3:30-4:30"]
+FRIDAY_TIMES  = ["9:30-10:30", "10:30-11:30", "11:30-12:30",
+                 "2:00-3:00",  "3:00-4:00",   "4:00-5:00"]
 
-print("🛠️  Force-filling the timetable for submission...")
+# ── Schedule ──────────────────────────────────────────────────────────────────
+env      = TimetableEnv()
+obs, _   = env.reset()
+subjects = env.df_subjects
+rooms    = env.df_rooms
 
-# Instead of random steps, we loop through each subject's required hours
-for idx, row in subjects_df.iterrows():
-    hours_to_place = row['required_hours']
-    course_id = idx + 1
-    
-    # Try to place each required hour for this subject
-    attempts = 0
-    placed = 0
-    while placed < hours_to_place and attempts < 500:
-        # Get the AI's best guess
-        action, _ = model.predict(obs, deterministic=False)
-        
-        # We override the action to ensure it's trying to place THIS specific course
-        # Action math: course_idx * (days * periods * rooms) + (rest of the mapping)
-        base_action = action % (env.days * env.periods * env.rooms)
-        forced_action = (idx * (env.days * env.periods * env.rooms)) + base_action
-        
-        obs, reward, terminated, truncated, info = env.step(forced_action)
-        
-        # Check if the environment state actually updated for this course
-        if course_id in env.state:
-            # Check how many times it exists now
-            current_count = np.count_nonzero(env.state == course_id)
-            placed = current_count
-        
-        attempts += 1
+print("Scheduling...\n")
+for idx, row in subjects.iterrows():
+    required = int(row["required_hours"])
+    placed   = 0
+    for _ in range(required):
+        valid = env.get_valid_actions(idx)
+        if valid:
+            random.shuffle(valid)
+            obs, reward, *_ = env.step(valid[0])
+            if reward > 0:
+                placed += 1
+                print(f"  ✅ {row['course_code']:8} ({row['division']:5}) {placed}/{required}")
+        else:
+            print(f"  ⚠️  {row['course_code']:8} ({row['division']:5}) no slot for hour {placed+1}")
 
-# --- FORMATTING THE OUTPUT ---
-final_state = env.state 
-days = ["Mon", "Tue", "Wed", "Thu", "Fri"]
-periods = ["P1", "P2", "P3", "P4", "P5", "P6"]
-room_names = pd.read_csv('rooms.csv')['room_name'].tolist()
-id_to_code = {i+1: code for i, code in enumerate(env.df_subjects['course_code'])}
+id_to_code = {i+1: r["course_code"] for i, r in subjects.iterrows()}
+id_to_div  = {i+1: r["division"]    for i, r in subjects.iterrows()}
 
-rows = []
+def get_cell(division, day, period):
+    for r in range(env.num_rooms):
+        cid = env.state[day, period, r]
+        if cid != 0 and (id_to_div[cid] == division or id_to_div[cid] == "ALL"):
+            return f"{id_to_code[cid]} [{rooms.iloc[r]['room_name']}]"
+    return "---"
+
+# ── Per-division export ────────────────────────────────────────────────────────
+print("\nExporting CSVs...")
+COLS = ["Day"] + PERIODS   # exactly 7 columns always
+
+for div in ["CS6A", "CS6B", "CS6C"]:
+    rows = []
+
+    # Row 1: timing header (shows what time each period is)
+    timing_row = {"Day": "TIMING (Mon-Thu)"}
+    for p, t in enumerate(WEEKDAY_TIMES):
+        timing_row[PERIODS[p]] = t
+    rows.append(timing_row)
+
+    timing_fri = {"Day": "TIMING (Friday)"}
+    for p, t in enumerate(FRIDAY_TIMES):
+        timing_fri[PERIODS[p]] = t
+    rows.append(timing_fri)
+
+    rows.append({c: "---" for c in COLS})  # blank separator row
+
+    # Data rows
+    for d, day_name in enumerate(DAY_NAMES):
+        row_data = {"Day": day_name}
+        for p in range(6):
+            row_data[PERIODS[p]] = get_cell(div, d, p)
+        rows.append(row_data)
+
+    pd.DataFrame(rows, columns=COLS).to_csv(f"MEC_Timetable_{div}.csv", index=False)
+    print(f"  📄 MEC_Timetable_{div}.csv  ({len(COLS)} columns)")
+
+# ── Full raw timetable ─────────────────────────────────────────────────────────
+raw_rows = []
 for d in range(5):
+    times = FRIDAY_TIMES if d == 4 else WEEKDAY_TIMES
     for p in range(6):
-        entry = {"Day": days[d], "Period": periods[p]}
-        for r in range(len(room_names)):
-            val = final_state[d, p, r]
-            entry[room_names[r]] = id_to_code.get(val, "---")
-        rows.append(entry)
+        entry = {"Day": DAY_NAMES[d], "Period": PERIODS[p], "Time": times[p]}
+        for r in range(env.num_rooms):
+            cid = env.state[d, p, r]
+            entry[rooms.iloc[r]["room_name"]] = id_to_code[cid] if cid != 0 else "---"
+        raw_rows.append(entry)
 
-pd.DataFrame(rows).to_csv('MEC_Final_Timetable.csv', index=False)
-print("✅ SUCCESS! MEC_Final_Timetable.csv is now filled based on subject requirements.")
+pd.DataFrame(raw_rows).to_csv("MEC_Full_Timetable_Raw.csv", index=False)
+print("  📄 MEC_Full_Timetable_Raw.csv")
+
+# ── Summary ────────────────────────────────────────────────────────────────────
+print(f"\n{'='*50}\nPLACEMENT SUMMARY\n{'='*50}")
+all_ok = True
+for idx, row in subjects.iterrows():
+    placed   = int(np.sum(env.state == idx + 1))
+    required = int(row["required_hours"])
+    ok       = placed >= required
+    all_ok   = all_ok and ok
+    print(f"  {'✅' if ok else '⚠️ '} {row['course_code']:8} ({row['division']:5}) {placed}/{required}")
+
+print(f"\n{'🎉 All placed!' if all_ok else '⚠️  Some missing — run again.'}")

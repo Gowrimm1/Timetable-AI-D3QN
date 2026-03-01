@@ -1,9 +1,37 @@
-teacher_code,teacher_name,subject_code
-APR,Aparna M,CST 302
-LMS,Lekshmi Subha M S,CST 304
-VBP,Veena Briji Philip,CST 306
-BVP,Dr. Binu V P,CST 362
-AG,Aparna Gireesh,HUT 300
-AKJ,Arya Mary KJ,CST 308
-AKJ_STS_MDL,Arya_Sinu_Manilal,CSL 332
-BVP_SKK_MRV,Binu_Sreekumar_Maria,CSD 334
+teacher_code,teacher_name,designation
+BVP,Dr. Binu V P,HOD & Assoc. Prof
+AFM,Ms. Aysha Fymin Majeed,Asst. Prof
+AJA,Ms. Anuja J A,Asst. Prof
+AJV,Mr. Anchal J Vattakunnel,Asst. Prof
+AKJ,Ms. Arya Mary K J,Asst. Prof
+ALK,Ms. Anantha Lakshmi K A,Asst. Prof
+AMR,Ms. Amrutha P M,Asst. Prof
+ANU,Ms. Anu Johnson,Asst. Prof
+APR,Ms. Aparna M,Asst. Prof
+ATH,Ms. Athira S Nair,Asst. Prof
+AVG,Ms. Arathy V G,Asst. Prof
+CHJ,Ms. Chinju P Varghese,Asst. Prof
+DAL,Ms. Dalia M S,Asst. Prof
+DVP,Ms. Divya Prakash,Asst. Prof
+EZP,Ms. Elizabeth Paul,Asst. Prof
+GTB,Ms. Geethu Bastain,Asst. Prof
+GVG,Ms. Gency Anoop,Asst. Prof
+JJP,Dr. Jiby J Puthividam,Asst. Prof
+KMM,Ms. Kiran Mary Matthew,Asst. Prof
+LMS,Ms. Lekshmi Subha M S,Asst. Prof
+MDL,Mr. Manilal D L,Assoc. Prof
+MMR,Dr. Murali Mohanan,Assoc. Prof
+MNK,Dr. Manju K,Asst. Prof
+MRM,Ms. Megna Raj M,Asst. Prof
+MRV,Ms. Maria Vijoy,Asst. Prof
+PRS,Dr. Priya S,Prof
+RAS,Ms. Raheena Salihin,Asst. Prof
+RHM,Mr. Rohith Menon,Asst. Prof
+RKR,Ms. Rekha R,Asst. Prof
+SKK,Mr. Sreekumar K,Asst. Prof
+SNL,Dr. Sindhu L,Asst. Prof
+SOP,Dr. Sony P,Asst. Prof
+STS,Ms. Sinu T S,Asst. Prof
+THA,Ms. Thasni Ibrahim,Asst. Prof
+VBP,Ms. Veena Briji Philip,Asst. Prof
+VNB,Ms. Vyshnavi B,Asst. Prof
