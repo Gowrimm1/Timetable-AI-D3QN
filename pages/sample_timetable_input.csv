@@ -1,0 +1,10 @@
+semester,subject,teacher,weekly_hours,is_lab,lab_hours
+3,Data Structures,Anita,4,No,0
+3,Operating Systems,Rahul,3,No,0
+3,DBMS,Meera,3,No,0
+3,Computer Networks,Arjun,3,No,0
+3,DBMS Lab,Meera,2,Yes,2
+3,OS Lab,Rahul,2,Yes,2
+5,Machine Learning,Kiran,4,No,0
+5,Compiler Design,Sneha,3,No,0
+5,ML Lab,Kiran,2,Yes,2
