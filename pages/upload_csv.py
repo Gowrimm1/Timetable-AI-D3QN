@@ -13,16 +13,16 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        # Read CSV
+        # Read locally for preview
         df = pd.read_csv(uploaded_file)
 
         st.success("File uploaded successfully!")
         st.subheader("📊 Data Preview")
         st.dataframe(df, use_container_width=True)
 
-        # Send to backend
         if st.button("🚀 Send to AI Generator"):
-            with st.spinner("Sending data to backend..."):
+
+            with st.spinner("Generating timetable..."):
 
                 response = requests.post(
                     "http://127.0.0.1:8000/generate",
@@ -36,27 +36,34 @@ if uploaded_file is not None:
                 )
 
                 if response.status_code == 200:
+
                     result = response.json()
-                    st.success("✅ Timetable Generated Successfully!")
-                    st.subheader("📅 Generated Timetable")
 
-                    # Debug: show raw response
-                    # st.write(result)
+                    # If backend sends error
+                    if "error" in result:
+                        st.error(f"Backend Error: {result['error']}")
+                    else:
+                        st.success("✅ Timetable Generated Successfully!")
 
-                    for semester, timetable in result.items():
-                        st.write(f"### Semester {semester}")
+                        st.subheader("📅 Generated Timetable")
 
-                        st.write("Raw data received:")
-                        st.write(timetable)
+                        for semester, timetable in result.items():
 
-                        if isinstance(timetable, list):
-                            timetable_df = pd.DataFrame(timetable)
-                            st.dataframe(timetable_df, use_container_width=True)
-                        else:
-                            st.error("Returned data is not in expected format.")
+                            st.markdown(f"## Semester {semester}")
+
+                            # Convert properly preserving MON/TUE index
+                            timetable_df = pd.DataFrame.from_dict(
+                                timetable,
+                                orient="index"
+                            )
+
+                            st.dataframe(
+                                timetable_df,
+                                use_container_width=True
+                            )
 
                 else:
-                    st.error(f"❌ Backend Error: {response.status_code}")
+                    st.error("❌ Failed to connect to backend.")
 
     except Exception as e:
         st.error(f"Error reading file: {e}")
