@@ -1,3 +1,8 @@
-room_id,room_type,capacity
-R101,Theory,60
-L202,Lab,30
+room_id,room_name,room_type,division_allowed
+1,Room_CSA,Theory,CSA
+2,Room_CSB,Theory,CSB
+3,Room_CSC,Theory,CSC
+4,Network_Lab_1,Lab_Network,ALL
+5,Network_Lab_2,Lab_Network,ALL
+6,Network_Lab_3,Lab_Network,ALL
+7,Project_Lab,Lab_Project,ALL

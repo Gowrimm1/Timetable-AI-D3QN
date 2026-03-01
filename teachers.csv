@@ -1,4 +1,9 @@
-teacher_id,teacher_name,course_code
-T01,Dr_Smith,CS301
-T02,Prof_Jones,CS302
-T03,Dr_Alpha,CS303
+teacher_code,teacher_name,subject_code
+APR,Aparna M,CST 302
+LMS,Lekshmi Subha M S,CST 304
+VBP,Veena Briji Philip,CST 306
+BVP,Dr. Binu V P,CST 362
+AG,Aparna Gireesh,HUT 300
+AKJ,Arya Mary KJ,CST 308
+AKJ_STS_MDL,Arya_Sinu_Manilal,CSL 332
+BVP_SKK_MRV,Binu_Sreekumar_Maria,CSD 334
