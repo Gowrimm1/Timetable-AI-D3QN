@@ -1,10 +1,9 @@
 """
-generator.py — MEC Timetable Generator (v10)
-Fixes:
-  1. Lab subjects show correctly in division view
-  2. Theory NOT scheduled during the division's own lab block
-  3. CSD334_CS6C gets its own separate lab block (no more fallback confusion)
-  4. All divisions' lab sessions properly tracked and blocked for theory
+generator.py — MEC Timetable Generator (v15)
+Lab sessions: STRICTLY 3 continuous periods — either P1-P2-P3 (morning)
+              OR P4-P5-P6 (afternoon). No scattered individual placements.
+Each division's lab sessions are on DIFFERENT days from each other.
+Theory scheduler is BLOCKED from touching lab periods for that division.
 """
 
 import random
@@ -19,300 +18,354 @@ FRIDAY_TIMES  = ["9:30-10:30","10:30-11:30","11:30-12:30",
 
 HONOURS_DAYS   = {1, 4}
 HONOURS_PERIOD = 4
-HONOURS_ROOM   = "Room_310"
-DIVISION_ROOMS = {"CS6A": "B202", "CS6B": "B302", "CS6C": "B303"}
-LAB_BLOCKS     = [(0,1,2), (3,4,5)]
+LAB_BLOCKS     = [(0,1,2), (3,4,5)]   # morning P1-P3 or afternoon P4-P6
+
+ROOM_NAMES = [
+    "B202","B302","B303","B304",
+    "Room_309","Room_310","Room_311","Room_201","Room_209",
+    "Room_301","Room_210","Room_211",
+    "Room_402","Room_213",
+    "Room_409","Room_410","Room_509","Room_510","Room_511","Room_515",
+    "Room_312","Room_512",
+    "Room_401","Room_503","Room_501",
+    "Room_314","Room_B307",
+    "Room_315","Room_B207",
+    "Room_B304",
+    "Network_Lab_1","Network_Lab_2","Network_Lab_3","Project_Lab",
+]
+
+NET_LABS  = ["Network_Lab_1","Network_Lab_2","Network_Lab_3"]
+PROJ_LABS = ["Project_Lab"]
+
+DIVISION_ROOMS = {
+    "CS2A":"Room_309","CS2B":"Room_310","CS2C":"Room_311","CS2CB":"Room_209",
+    "CS4A":"Room_309","CS4B":"Room_310","CS4C":"Room_201","CS4CB":"Room_209",
+    "CS6A":"B202","CS6B":"B302","CS6C":"B303","CS6CB":"B304",
+    "CS8A":"Room_301","CS8B":"Room_201","CS8C":"Room_210","CS8CB":"Room_211",
+    "EC2A":"Room_409","EC2B":"Room_410",
+    "EC4A":"Room_409","EC4B":"Room_410",
+    "EC6A":"Room_509","EC6B":"Room_510",
+    "EC8A":"Room_511","EC8B":"Room_515",
+    "EV2":"Room_312","EV4":"Room_512","EV6":"Room_512",
+    "EB2":"Room_401","EB4":"Room_503","EB6":"Room_503","EB8":"Room_501",
+    "EE2":"Room_314","EE4":"Room_B307","EE6":"Room_B307","EE8":"Room_B307",
+    "ME2":"Room_315","ME4":"Room_B207","ME6":"Room_B207","ME8":"Room_B207",
+    "CU2":"Room_402","CU4":"Room_B304","CU6":"Room_B304","CU8":"Room_213",
+    "EEE":"Room_309",
+}
 
 
-def generate_timetable(df_subjects, df_rooms, df_teachers):
-    df_subjects.columns = df_subjects.columns.str.strip().str.lower()
-    df_rooms.columns    = df_rooms.columns.str.strip().str.lower()
-
-    room_names = df_rooms["room_name"].tolist()
+def _schedule_one_semester(df_sem: pd.DataFrame) -> dict:
+    sem = df_sem["semester"].iloc[0]
+    room_names = ROOM_NAMES
     num_rooms  = len(room_names)
-    room_idx   = {name: i for i, name in enumerate(room_names)}
-    net_labs   = [r for r in room_names if "Network" in r]
-    proj_labs  = [r for r in room_names if "Project" in r]
+    room_idx   = {n: i for i, n in enumerate(room_names)}
 
+    # ── Build subject list ────────────────────────────────────────────────────
+    subjects  = []
+    subj_info = {}
+    subj_teach= {}
+
+    for _, row in df_sem.iterrows():
+        code = str(row["course_code"]).strip()
+        div  = str(row["division"]).strip()
+        tc   = str(row["teacher_code"]).strip()
+        key  = (code, div)
+        if key not in subj_info:
+            subjects.append(key)
+            subj_info[key] = {
+                "required_hours":   int(row["required_hours"]),
+                "room_type_needed": str(row["room_type_needed"]).strip(),
+                "is_honours":       str(row["is_honours"]).strip().lower() == "true",
+                "subject_name":     str(row["subject_name"]).strip(),
+            }
+            subj_teach[key] = []
+        if tc and tc not in ("TBD","nan") and tc not in subj_teach[key]:
+            subj_teach[key].append(tc)
+
+    ns     = len(subjects)
     state  = np.zeros((5, 6, num_rooms), dtype=int)
-    placed = [0] * len(df_subjects)
-    req    = df_subjects["required_hours"].astype(int).tolist()
+    placed = [0] * ns
+    req    = [subj_info[k]["required_hours"] for k in subjects]
+    s_idx  = {k: i for i, k in enumerate(subjects)}
 
-    id_to_code = {i+1: r["course_code"] for i, r in df_subjects.iterrows()}
-    id_to_div  = {i+1: r["division"]    for i, r in df_subjects.iterrows()}
+    divisions = list(dict.fromkeys(div for _, div in subjects))
+    # div_lab_periods: which (day,period) each division is in lab
+    div_lab_periods = {div: set() for div in divisions}
+    # track which days each division already has a lab
+    div_lab_days = {div: set() for div in divisions}
 
-    # Track which (day, block) each division is busy in lab
-    # div_lab_blocks[division] = list of (day, block) tuples
-    div_lab_blocks = {"CS6A": [], "CS6B": [], "CS6C": []}
-
-    def get_idx(code, division):
-        rows = df_subjects[(df_subjects["course_code"]==code) &
-                           (df_subjects["division"]==division)]
-        return rows.index[0] if not rows.empty else None
-
-    def teacher_busy(code, day, period):
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def teacher_busy(tc, day, period):
         for r in range(num_rooms):
             cid = state[day, period, r]
-            if cid != 0 and df_subjects.iloc[cid-1]["teacher_code"] == code:
+            if cid != 0 and tc in subj_teach[subjects[cid-1]]:
                 return True
         return False
 
-    def block_teacher_free(code, day, block):
-        return all(not teacher_busy(code, day, p) for p in block)
+    def any_free(idx, day, period):
+        ts = subj_teach[subjects[idx]]
+        return not ts or any(not teacher_busy(tc, day, period) for tc in ts)
+
+    def block_any_free(idx, day, block):
+        ts = subj_teach[subjects[idx]]
+        return not ts or any(
+            all(not teacher_busy(tc, day, p) for p in block) for tc in ts
+        )
 
     def block_room_free(rname, day, block):
-        ri = room_idx[rname]
+        ri = room_idx.get(rname)
+        if ri is None: return False
         return all(state[day, p, ri] == 0 for p in block)
 
     def place_block(idx, rname, day, block):
-        ri = room_idx[rname]
+        """Place subject idx in rname for all 3 periods of block."""
+        ri = room_idx.get(rname)
+        if ri is None: return False
         for p in block:
             state[day, p, ri] = idx + 1
         placed[idx] += 3
+        return True
 
-    def div_in_lab(division, day, period):
-        """True if this division has a lab session at (day, period)."""
-        for (d, blk) in div_lab_blocks[division]:
-            if d == day and period in blk:
-                return True
-        return False
+    def div_in_lab(div, day, period):
+        return (day, period) in div_lab_periods.get(div, set())
 
-    # ── STEP 1: Two shared lab sessions (all 3 divisions simultaneously) ──────
-    # Session 1: Net_Lab_1→CS6A, Net_Lab_2→CS6B, Net_Lab_3→CS6C, Proj→CS6A
-    # Session 2: Net_Lab_1→CS6A, Net_Lab_2→CS6B, Net_Lab_3→CS6C, Proj→CS6B
-    # CS6C CSD334: separate block in Net_Lab (since only 1 Project_Lab)
+    def mark_lab_periods(div, day, block):
+        for p in block: div_lab_periods[div].add((day, p))
+        div_lab_days[div].add(day)
 
-    csl = {div: get_idx("CSL332", div) for div in ["CS6A","CS6B","CS6C"]}
-    csd = {div: get_idx("CSD334", div) for div in ["CS6A","CS6B","CS6C"]}
-
+    # Valid blocks: never put a lab in a block that includes the honours period
     valid_blocks = [
-        (day, block)
-        for day in range(5)
-        for block in LAB_BLOCKS
-        if not (day in HONOURS_DAYS and HONOURS_PERIOD in block)
+        (day, blk) for day in range(5) for blk in LAB_BLOCKS
+        if not (day in HONOURS_DAYS and HONOURS_PERIOD in blk)
     ]
 
-    used_slots = []
+    # ── STEP 1: Lab scheduling — strictly continuous 3-hour blocks ───────────
+    # Group lab subjects by type and find which divisions need them
+    net_keys  = [(c,d) for (c,d) in subjects
+                 if subj_info[(c,d)]["room_type_needed"] == "Lab_Network"]
+    proj_keys = [(c,d) for (c,d) in subjects
+                 if subj_info[(c,d)]["room_type_needed"] == "Lab_Project"]
+    proj_divs = list(dict.fromkeys(d for _,d in proj_keys))
 
-    # Place 2 shared CSL332 sessions (all 3 divisions in network labs)
-    # + CSD334 for CS6A (session1) and CS6B (session2) in project lab
-    proj_rotation = ["CS6A", "CS6B"]
-    shared_sessions = 0
+    net_day = None
+    used_net_days = set()
 
-    candidates = list(valid_blocks)
-    random.shuffle(candidates)
+    # Group net lab subjects by subject_name — schedule each group separately
+    net_by_subj = {}
+    for k in net_keys:
+        sname = subj_info[k]["subject_name"]
+        net_by_subj.setdefault(sname, []).append(k)
 
-    for day, block in candidates:
-        if shared_sessions >= 2:
+    for sname, group_keys in net_by_subj.items():
+        group_divs = list(dict.fromkeys(d for _,d in group_keys))
+        # If more divisions than net labs, split into batches of 3
+        all_group_divs = group_divs
+        all_group_keys = group_keys
+        batches = [all_group_divs[i:i+len(NET_LABS)] 
+                   for i in range(0, len(all_group_divs), len(NET_LABS))]
+        group_divs = batches[0]
+        group_keys = [k for k in all_group_keys if k[1] in group_divs]
+
+        cands = list(valid_blocks)
+        random.shuffle(cands)
+        for day, blk in cands:
+            if day in used_net_days: continue
+            if not all(block_any_free(s_idx[k], day, blk)
+                       for k in group_keys if k in s_idx):
+                continue
+            if not all(block_room_free(NET_LABS[i], day, blk)
+                       for i in range(len(group_divs))):
+                continue
+            for i, div in enumerate(group_divs):
+                dk = [(c,d) for (c,d) in group_keys if d == div]
+                if dk:
+                    place_block(s_idx[dk[0]], NET_LABS[i], day, blk)
+                    mark_lab_periods(div, day, blk)
+            used_net_days.add(day)
+            if net_day is None: net_day = day
+            slot = "Morning (P1-P3)" if blk[0]==0 else "Afternoon (P4-P6)"
+            print(f"  NET LAB '{sname}' [{sem}]: {DAY_NAMES[day]} {slot}")
+            # Schedule overflow batches on separate days
+            for batch in batches[1:]:
+                batch_keys = [k for k in all_group_keys if k[1] in batch]
+                for day2, blk2 in cands:
+                    if day2 in used_net_days: continue
+                    if not all(block_any_free(s_idx[k], day2, blk2)
+                               for k in batch_keys if k in s_idx): continue
+                    if not all(block_room_free(NET_LABS[i], day2, blk2)
+                               for i in range(len(batch))): continue
+                    for i, div2 in enumerate(batch):
+                        dk2 = [(c,d) for (c,d) in batch_keys if d == div2]
+                        if dk2:
+                            place_block(s_idx[dk2[0]], NET_LABS[i], day2, blk2)
+                            mark_lab_periods(div2, day2, blk2)
+                    used_net_days.add(day2)
+                    slot2 = "Morning (P1-P3)" if blk2[0]==0 else "Afternoon (P4-P6)"
+                    print(f"  NET LAB '{sname}' overflow [{sem}]: {DAY_NAMES[day2]} {slot2}")
+                    break
             break
-        if (day, block) in used_slots:
-            continue
 
-        # All 3 CSL332 teachers free
-        if not all(block_teacher_free(
-                df_subjects.iloc[csl[div]]["teacher_code"], day, block)
-                for div in ["CS6A","CS6B","CS6C"] if csl[div] is not None):
-            continue
-
-        # CSD334 teacher for this session's proj div must be free
-        proj_div = proj_rotation[shared_sessions]
-        if not block_teacher_free(
-                df_subjects.iloc[csd[proj_div]]["teacher_code"], day, block):
-            continue
-
-        # All 3 net labs free
-        if not all(block_room_free(net_labs[i], day, block) for i in range(3)):
-            continue
-
-        # Project lab free
-        if not block_room_free(proj_labs[0], day, block):
-            continue
-
-        # Place CSL332 for all 3 divisions
-        for i, div in enumerate(["CS6A","CS6B","CS6C"]):
-            if csl[div] is not None:
-                place_block(csl[div], net_labs[i], day, block)
-                div_lab_blocks[div].append((day, block))
-
-        # Place CSD334 for proj_div in project lab
-        place_block(csd[proj_div], proj_labs[0], day, block)
-
-        used_slots.append((day, block))
-        shared_sessions += 1
-        slot = "Morning P1-P3" if block[0]==0 else "Afternoon P4-P6"
-        print(f"  Shared LAB session {shared_sessions}: {DAY_NAMES[day]} {slot}")
-        print(f"    CSL332: CS6A→{net_labs[0]}, CS6B→{net_labs[1]}, CS6C→{net_labs[2]}")
-        print(f"    CSD334: {proj_div}→{proj_labs[0]}")
-
-    # Place CSD334 for CS6C (and CS6B if not placed) in remaining net lab slots
-    for div in ["CS6B", "CS6C"]:
-        ci = csd[div]
-        if ci is None or placed[ci] >= req[ci]:
-            continue
-
-        random.shuffle(candidates)
-        for day, block in candidates:
-            if (day, block) in used_slots:
+    # --- Project lab: all divisions, DIFFERENT day from net lab
+    if proj_keys:
+        cands = list(valid_blocks)
+        random.shuffle(cands)
+        for day, blk in cands:
+            if day == net_day:
                 continue
-            if day in HONOURS_DAYS and HONOURS_PERIOD in block:
+            # No division should already have a lab this day
+            if any(day in div_lab_days.get(div, set()) for div in proj_divs):
                 continue
-
-            teacher = df_subjects.iloc[ci]["teacher_code"]
-            if not block_teacher_free(teacher, day, block):
+            # All proj lab teachers free
+            if not all(block_any_free(s_idx[k], day, blk)
+                       for k in proj_keys if k in s_idx):
                 continue
+            # Project lab room free
+            if not block_room_free(PROJ_LABS[0], day, blk):
+                continue
+            # Need enough net labs for overflow (CS6B/C go to net labs)
+            free_nets = [l for l in NET_LABS if block_room_free(l, day, blk)]
+            if len(free_nets) < max(0, len(proj_divs) - 1):
+                continue
+            # Place: first division → Project_Lab, others → Net_Labs
+            for i, div in enumerate(proj_divs):
+                dk = [(c,d) for (c,d) in proj_keys if d == div]
+                if not dk: continue
+                room = PROJ_LABS[0] if i == 0 else free_nets[i-1]
+                place_block(s_idx[dk[0]], room, day, blk)
+                mark_lab_periods(div, day, blk)
+            slot = "Morning (P1-P3)" if blk[0]==0 else "Afternoon (P4-P6)"
+            print(f"  PROJ LAB [{sem}]: {DAY_NAMES[day]} {slot}  ← different day ✅")
+            break
 
-            # Find any free net lab
-            net = next((l for l in net_labs
-                        if block_room_free(l, day, block)), None)
-            if net:
-                place_block(ci, net, day, block)
-                div_lab_blocks[div].append((day, block))
-                used_slots.append((day, block))
-                slot = "Morning P1-P3" if block[0]==0 else "Afternoon P4-P6"
-                print(f"  CSD334_{div}: {DAY_NAMES[day]} {slot} → {net}")
-                break
-
-    print(f"\n  Lab blocks per division:")
-    for div, blocks in div_lab_blocks.items():
-        for d, b in blocks:
-            slot = "Morning" if b[0]==0 else "Afternoon"
-            print(f"    {div}: {DAY_NAMES[d]} {slot}")
-
-    # ── STEP 2: Honours ───────────────────────────────────────────────────────
-    hon = df_subjects[df_subjects["is_honours"].astype(str).str.lower()=="true"]
-    for idx, row in hon.iterrows():
+    # ── STEP 2: Honours — in division's own room, preferring Tue/Fri P5 ──────
+    for key in subjects:
+        if not subj_info[key]["is_honours"]: continue
+        idx   = s_idx[key]
+        div   = key[1]
+        needed= req[idx]
         placed[idx] = 0
-        for day in sorted(HONOURS_DAYS):
-            if state[day, HONOURS_PERIOD, room_idx[HONOURS_ROOM]] == 0:
-                state[day, HONOURS_PERIOD, room_idx[HONOURS_ROOM]] = idx + 1
-                placed[idx] += 1
-                print(f"  HON: {DAY_NAMES[day]} P{HONOURS_PERIOD+1} → {HONOURS_ROOM}")
+        troom = DIVISION_ROOMS.get(div)
+        if not troom or troom not in room_idx: continue
+        ri = room_idx[troom]
+        preferred = [(d, HONOURS_PERIOD) for d in sorted(HONOURS_DAYS)]
+        other = [(d,p) for d in range(5) for p in range(6)
+                 if not (d in HONOURS_DAYS and p == HONOURS_PERIOD)]
+        random.shuffle(other)
+        for day, period in preferred + other:
+            if placed[idx] >= needed: break
+            if div_in_lab(div, day, period): continue
+            if state[day, period, ri] != 0: continue
+            state[day, period, ri] = idx + 1
+            placed[idx] += 1
 
-    # ── STEP 3: Theory — skip division's own lab periods ──────────────────────
-    theory = df_subjects[
-        (df_subjects["is_honours"].astype(str).str.lower() != "true") &
-        (~df_subjects["course_code"].isin(["CSL332","CSD334"]))
-    ].sort_values("required_hours", ascending=False)
+    # ── STEP 3: Theory — never touch a division's lab periods ─────────────────
+    theory_keys = sorted(
+        [(c,d) for (c,d) in subjects
+         if subj_info[(c,d)]["room_type_needed"] == "Theory"
+         and not subj_info[(c,d)]["is_honours"]],
+        key=lambda k: -subj_info[k]["required_hours"]
+    )
 
-    for idx, row in theory.iterrows():
-        division = row["division"]
-        teacher  = row["teacher_code"]
-        t_room   = DIVISION_ROOMS.get(division)
-        if not t_room:
-            continue
-        ri     = room_idx[t_room]
-        needed = req[idx]
+    for key in theory_keys:
+        idx   = s_idx[key]
+        div   = key[1]
+        troom = DIVISION_ROOMS.get(div)
+        if not troom or troom not in room_idx:
+            for rn in ROOM_NAMES:
+                if "Lab" not in rn:
+                    troom = rn
+                    break
+        ri    = room_idx.get(troom, 0)
+        needed= req[idx]
         placed[idx] = 0
 
-        slots = [(d, p) for d in range(5) for p in range(6)]
+        slots = [(d,p) for d in range(5) for p in range(6)]
         random.shuffle(slots)
 
         for day, period in slots * 10:
-            if placed[idx] >= needed:
-                break
-
-            # Skip Honours slot
-            if day in HONOURS_DAYS and period == HONOURS_PERIOD:
-                continue
-            # ── KEY FIX: skip if division is in lab at this period ────────────
-            if div_in_lab(division, day, period):
-                continue
-            # Theory room must be free
-            if state[day, period, ri] != 0:
-                continue
-            # Teacher must be free
-            if teacher_busy(teacher, day, period):
-                continue
+            if placed[idx] >= needed: break
+            # Skip honours period
+            if day in HONOURS_DAYS and period == HONOURS_PERIOD: continue
+            # ── KEY: skip if division is in a lab this period ─────────────────
+            if div_in_lab(div, day, period): continue
+            # Room must be free
+            if state[day, period, ri] != 0: continue
+            # Teacher free
+            if not any_free(idx, day, period): continue
             # Max 2 of same subject per day
-            if sum(1 for p in range(6)
-                   if state[day, p, ri] == idx+1) >= 2:
-                continue
+            if sum(1 for p in range(6) if state[day,p,ri]==idx+1) >= 2: continue
             # No back-to-back same subject
-            before = period > 0 and state[day, period-1, ri] == idx+1
-            after  = period < 5 and state[day, period+1, ri] == idx+1
-            if before or after:
-                continue
-            # Max 2 theory periods for this teacher today
-            if sum(1 for p in range(6)
-                   if state[day, p, ri] != 0 and
-                   df_subjects.iloc[state[day, p, ri]-1]["teacher_code"] == teacher
-                   ) >= 2:
-                continue
+            if (period>0 and state[day,period-1,ri]==idx+1) or \
+               (period<5 and state[day,period+1,ri]==idx+1): continue
 
             state[day, period, ri] = idx + 1
             placed[idx] += 1
 
-    # ── Build DataFrames ──────────────────────────────────────────────────────
-    def get_cell(division, day, period):
-        # 1. Theory room
-        t_room = DIVISION_ROOMS.get(division)
-        if t_room:
-            cid = state[day, period, room_idx[t_room]]
-            if cid != 0 and (id_to_div[cid]==division or id_to_div[cid]=="ALL"):
-                return f"{id_to_code[cid]} [{t_room}]"
-
-        # 2. Honours room
-        cid = state[day, period, room_idx[HONOURS_ROOM]]
-        if cid != 0 and id_to_div[cid] == "ALL":
-            return f"{id_to_code[cid]} [{HONOURS_ROOM}]"
-
-        # 3. Lab rooms — match by division
+    # ── Build output DataFrames ───────────────────────────────────────────────
+    def get_cell(div, day, period):
+        troom = DIVISION_ROOMS.get(div)
+        # Theory room
+        if troom and troom in room_idx:
+            cid = state[day, period, room_idx[troom]]
+            if cid != 0 and subjects[cid-1][1] == div:
+                return f"{subjects[cid-1][0]} [{troom}]"
+        # Lab rooms
         for r, rname in enumerate(room_names):
-            if rname in (t_room, HONOURS_ROOM):
-                continue
+            if rname == troom: continue
             cid = state[day, period, r]
-            if cid != 0 and id_to_div[cid] == division:
-                return f"{id_to_code[cid]} [{rname}]"
-
-        # 4. Show lab period as "LAB SESSION" if division is in lab
-        if div_in_lab(division, day, period):
+            if cid != 0 and subjects[cid-1][1] == div:
+                return f"{subjects[cid-1][0]} [{rname}]"
+        # Show lab session marker
+        if div_in_lab(div, day, period):
             return "LAB SESSION"
-
         return "---"
 
-    def build_division_df(division):
-        wday = {"Day": "Time (Mon-Thu)"}
-        fri  = {"Day": "Time (Friday)"}
-        sep  = {"Day": ""}
+    def build_div_df(div):
+        wday={"Day":"Time (Mon-Thu)"}; fri={"Day":"Time (Friday)"}; sep={"Day":""}
         for p in range(6):
-            wday[f"P{p+1}"] = WEEKDAY_TIMES[p]
-            fri[f"P{p+1}"]  = FRIDAY_TIMES[p]
-            sep[f"P{p+1}"]  = ""
-        rows = [wday, fri, sep]
-        for d, day_name in enumerate(DAY_NAMES):
-            row = {"Day": day_name}
-            for p in range(6):
-                row[f"P{p+1}"] = get_cell(division, d, p)
+            wday[f"P{p+1}"]=WEEKDAY_TIMES[p]; fri[f"P{p+1}"]=FRIDAY_TIMES[p]
+            sep[f"P{p+1}"]=""
+        rows=[wday,fri,sep]
+        for d,dn in enumerate(DAY_NAMES):
+            row={"Day":dn}
+            for p in range(6): row[f"P{p+1}"]=get_cell(div,d,p)
             rows.append(row)
-        return pd.DataFrame(rows, columns=["Day","P1","P2","P3","P4","P5","P6"])
+        return pd.DataFrame(rows,columns=["Day","P1","P2","P3","P4","P5","P6"])
 
-    def build_raw_df():
-        rows = []
+    def build_raw():
+        rows=[]
         for d in range(5):
-            times = FRIDAY_TIMES if d == 4 else WEEKDAY_TIMES
+            times=FRIDAY_TIMES if d==4 else WEEKDAY_TIMES
             for p in range(6):
-                entry = {"Day": DAY_NAMES[d], "Period": f"P{p+1}", "Time": times[p]}
-                for r, rname in enumerate(room_names):
-                    cid = state[d, p, r]
-                    entry[rname] = id_to_code[cid] if cid != 0 else "---"
-                rows.append(entry)
+                e={"Day":DAY_NAMES[d],"Period":f"P{p+1}","Time":times[p]}
+                for r,rn in enumerate(room_names):
+                    cid=state[d,p,r]
+                    e[rn]=subjects[cid-1][0] if cid!=0 else "---"
+                rows.append(e)
         return pd.DataFrame(rows)
 
-    result = {
-        "CS6A": build_division_df("CS6A"),
-        "CS6B": build_division_df("CS6B"),
-        "CS6C": build_division_df("CS6C"),
-        "raw":  build_raw_df(),
-    }
+    result = {div: build_div_df(div) for div in divisions}
+    result[f"raw_{sem}"] = build_raw()
 
-    print("\n── Placement Summary ──")
-    all_ok = True
-    for idx, row in df_subjects.iterrows():
-        actual = int(np.sum(state == idx + 1))
-        r = req[idx]
-        ok = actual >= r
-        all_ok = all_ok and ok
-        print(f"  {'✅' if ok else '❌'} {row['course_code']:8} "
-              f"({row['division']:5}) {actual}/{r}")
-    print(f"\n  {'🎉 All placed!' if all_ok else '⚠️  Some missing'}")
+    # Summary
+    missed = [(subjects[i],placed[i],req[i])
+              for i in range(ns) if placed[i] < req[i]]
+    if missed:
+        for key,p,r in missed:
+            print(f"  ❌ {key[0]:12}({key[1]:8}) {p}/{r}")
+    else:
+        print(f"  ✅ All {ns} subjects placed for {sem}")
+
     return result
+
+
+def generate_timetable(df_allotment: pd.DataFrame) -> dict:
+    df_allotment.columns = df_allotment.columns.str.strip().str.lower()
+    all_results = {}
+    for sem in df_allotment["semester"].unique():
+        df_sem = df_allotment[df_allotment["semester"]==sem].copy()
+        print(f"\n── {sem} ({len(df_sem)} rows, "
+              f"{df_sem['division'].nunique()} divisions) ──")
+        all_results.update(_schedule_one_semester(df_sem))
+    return all_results

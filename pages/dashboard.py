@@ -1,303 +1,431 @@
 import streamlit as st
+import pandas as pd
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Dashboard · MEC AI", layout="wide", page_icon="⚡",
+                   initial_sidebar_state="expanded")
 
-# =====================
-# Custom CSS
-# =====================
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&display=swap');
 
-.stApp {
-    background-color: #0f172a;
-    color: white;
+* { box-sizing: border-box; }
+html, body, [data-testid="stAppViewContainer"] {
+    background: #0a0a0f !important;
+    color: #e8e8f0 !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+}
+[data-testid="stHeader"] { display: none !important; }
+[data-testid="stSidebar"] {
+    background: #0f0f1a !important;
+    border-right: 1px solid rgba(99,102,241,0.15) !important;
+}
+[data-testid="stSidebar"] * { color: #e8e8f0 !important; }
+
+/* Nav links */
+[data-testid="stSidebarNav"] a {
+    color: rgba(200,200,220,0.6) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-size: 14px !important;
+    border-radius: 8px !important;
+    transition: all 0.2s !important;
+    padding: 8px 12px !important;
+}
+[data-testid="stSidebarNav"] a:hover,
+[data-testid="stSidebarNav"] a[aria-selected="true"] {
+    background: rgba(99,102,241,0.15) !important;
+    color: #a5b4fc !important;
 }
 
-/* HERO SECTION */
-.hero {
-    padding: 80px 40px;
-    border-radius: 20px;
-    background: linear-gradient(135deg, #6d28d9, #9333ea, #c026d3);
-    color: white;
-    text-align: left;
+.block-container { padding: 2rem 2.5rem !important; max-width: 100% !important; }
+
+/* ── PAGE HEADER ─────────────────────────────────────── */
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.page-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    letter-spacing: 0.05em;
+    background: linear-gradient(135deg, #fff 40%, #a5b4fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+}
+.page-subtitle {
+    font-size: 13px;
+    color: rgba(200,200,220,0.4);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+    letter-spacing: 0.05em;
+}
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(16,185,129,0.1);
+    border: 1px solid rgba(16,185,129,0.3);
+    border-radius: 100px;
+    padding: 8px 20px;
+    font-size: 13px;
+    color: #6ee7b7;
+    font-family: 'JetBrains Mono', monospace;
+}
+.status-pill::before {
+    content: '';
+    width: 8px; height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #10b981;
+    animation: blink 2s infinite;
+}
+@keyframes blink {
+    0%,100% { opacity:1; } 50% { opacity:0.3; }
 }
 
-.hero h1 {
-    font-size: 55px;
-    font-weight: 800;
+/* ── KPI CARDS ───────────────────────────────────────── */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+}
+.kpi-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s;
+}
+.kpi-card:hover {
+    border-color: rgba(99,102,241,0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(99,102,241,0.1);
+}
+.kpi-card::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 80px; height: 80px;
+    border-radius: 0 16px 0 80px;
+    background: var(--accent);
+    opacity: 0.06;
+}
+.kpi-icon { font-size: 22px; margin-bottom: 12px; }
+.kpi-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 44px;
+    line-height: 1;
+    color: var(--accent-color);
+}
+.kpi-label {
+    font-size: 12px;
+    color: rgba(200,200,220,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+}
+.kpi-trend {
+    font-size: 11px;
+    color: #6ee7b7;
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
 }
 
-.hero span {
-    color: #fde047;
+/* ── DEPT GRID ───────────────────────────────────────── */
+.dept-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 32px;
+}
+.dept-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all 0.25s;
+}
+.dept-card:hover {
+    background: rgba(99,102,241,0.08);
+    border-color: rgba(99,102,241,0.25);
+    transform: translateX(4px);
+}
+.dept-dot {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.dept-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #e8e8f0;
+}
+.dept-sub {
+    font-size: 11px;
+    color: rgba(200,200,220,0.4);
+    margin-top: 2px;
+    font-family: 'JetBrains Mono', monospace;
 }
 
-.hero p {
-    font-size: 20px;
-    margin-top: 15px;
-    color: #f3f4f6;
+/* ── QUICK ACTIONS ───────────────────────────────────── */
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
 }
-
-/* STATS */
-.stat-box {
-    background: #1e293b;
-    padding: 30px;
-    border-radius: 15px;
+.action-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 28px 24px;
     text-align: center;
-    transition: 0.3s;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
 }
-
-.stat-box:hover {
-    transform: translateY(-5px);
-    background: #334155;
+.action-card:hover {
+    background: rgba(99,102,241,0.08);
+    border-color: rgba(99,102,241,0.3);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(99,102,241,0.15);
 }
-
-.stat-number {
-    font-size: 30px;
-    font-weight: 700;
-    color: #38bdf8;
+.action-icon {
+    font-size: 36px;
+    margin-bottom: 14px;
+    display: block;
 }
-
-.stat-label {
+.action-title {
     font-size: 16px;
-    color: #cbd5e1;
+    font-weight: 600;
+    color: #e8e8f0;
+    margin-bottom: 6px;
+}
+.action-desc {
+    font-size: 12px;
+    color: rgba(200,200,220,0.4);
+    line-height: 1.5;
+}
+.action-arrow {
+    position: absolute;
+    bottom: 16px; right: 20px;
+    font-size: 18px;
+    color: rgba(165,180,252,0.3);
+    transition: all 0.3s;
+}
+.action-card:hover .action-arrow {
+    color: #6366f1;
+    transform: translate(3px, -3px);
 }
 
-/* FEATURE CARDS */
-.feature-card {
-    background: #1e293b;
-    padding: 30px;
-    border-radius: 20px;
-    margin-bottom: 20px;
-    transition: 0.3s;
+/* ── SECTION HEADERS ─────────────────────────────────── */
+.section-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 0.05em;
+    color: #e8e8f0;
+}
+.section-line {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.06);
 }
 
-.feature-card:hover {
-    transform: scale(1.02);
-    background: #334155;
+/* ── STREAMLIT BUTTON OVERRIDES ──────────────────────── */
+.stButton > button {
+    background: rgba(99,102,241,0.12) !important;
+    color: #a5b4fc !important;
+    border: 1px solid rgba(99,102,241,0.25) !important;
+    border-radius: 10px !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 600 !important;
+    transition: all 0.3s !important;
 }
-
-.feature-card h3 {
-    color: #22d3ee;
-    margin-bottom: 10px;
+.stButton > button:hover {
+    background: rgba(99,102,241,0.25) !important;
+    border-color: rgba(99,102,241,0.5) !important;
+    transform: translateY(-1px) !important;
 }
-
-.feature-card p {
-    color: #cbd5e1;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
-
-# =====================
-# HERO SECTION
-# =====================
+# ── Page header ───────────────────────────────────────────────────────────────
 st.markdown("""
-<div class="hero">
-    <h1>Meet Your AI <span>Scheduling Assistant</span></h1>
-    <p>Generate conflict-free university timetables in seconds. 
-    Upload data, optimize scheduling, and visualize results beautifully.</p>
+<div class="page-header">
+    <div>
+        <div class="page-title">DASHBOARD</div>
+        <div class="page-subtitle">MODEL ENGINEERING COLLEGE · AI TIMETABLE SYSTEM</div>
+    </div>
+    <div class="status-pill">SYSTEM ONLINE</div>
 </div>
 """, unsafe_allow_html=True)
 
-st.write("")
-
-# =====================
-# STATS ROW
-# =====================
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-number">8</div>
-        <div class="stat-label">Semesters</div>
+# ── KPI Cards ─────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="kpi-grid">
+    <div class="kpi-card" style="--accent:rgba(99,102,241,0.3); --accent-color:#a5b4fc;">
+        <div class="kpi-icon">🏫</div>
+        <div class="kpi-num">42</div>
+        <div class="kpi-label">Total Divisions</div>
+        <div class="kpi-trend">▲ All departments covered</div>
     </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-number">6</div>
-        <div class="stat-label">Periods / Day</div>
+    <div class="kpi-card" style="--accent:rgba(236,72,153,0.3); --accent-color:#f9a8d4;">
+        <div class="kpi-icon">📚</div>
+        <div class="kpi-num">313</div>
+        <div class="kpi-label">Subject Records</div>
+        <div class="kpi-trend">▲ S2 · S4 · S6 · S8</div>
     </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-number">480+</div>
-        <div class="stat-label">Subjects</div>
+    <div class="kpi-card" style="--accent:rgba(16,185,129,0.3); --accent-color:#6ee7b7;">
+        <div class="kpi-icon">✅</div>
+        <div class="kpi-num">100%</div>
+        <div class="kpi-label">Placement Rate</div>
+        <div class="kpi-trend">▲ Zero unscheduled subjects</div>
     </div>
-    """, unsafe_allow_html=True)
-
-with col4:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-number">99.9%</div>
-        <div class="stat-label">Conflict-Free</div>
+    <div class="kpi-card" style="--accent:rgba(245,158,11,0.3); --accent-color:#fcd34d;">
+        <div class="kpi-icon">⚡</div>
+        <div class="kpi-num">0</div>
+        <div class="kpi-label">Conflicts</div>
+        <div class="kpi-trend">▲ Hard constraints enforced</div>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
-st.write("\n\n")
-
-# =====================
-# FEATURES GRID
-# =====================
-st.markdown("## 🚀 AI-Powered Benefits")
+# ── Quick Actions ─────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="section-head">
+    <div class="section-title">QUICK ACTIONS</div>
+    <div class="section-line"></div>
+</div>
+<div class="action-grid">
+    <div class="action-card">
+        <span class="action-icon">📤</span>
+        <div class="action-title">Upload & Generate</div>
+        <div class="action-desc">Upload your SubAllotment CSV and generate timetables for all semesters instantly</div>
+        <div class="action-arrow">↗</div>
+    </div>
+    <div class="action-card">
+        <span class="action-icon">📅</span>
+        <div class="action-title">View Timetables</div>
+        <div class="action-desc">Browse generated schedules by division, semester, or department</div>
+        <div class="action-arrow">↗</div>
+    </div>
+    <div class="action-card">
+        <span class="action-icon">👩‍🏫</span>
+        <div class="action-title">Manage Faculty</div>
+        <div class="action-desc">Add, edit, or view faculty details and subject assignments</div>
+        <div class="action-arrow">↗</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>Conflict-Free Scheduling</h3>
-        <p>Automatically eliminates teacher, room, and subject clashes 
-        for optimized academic planning.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="feature-card">
-        <h3>Smart Recommendations</h3>
-        <p>AI suggests better slot distributions based on constraints 
-        and historical data.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>Time & Cost Efficiency</h3>
-        <p>Reduce manual scheduling effort from hours to seconds.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="feature-card">
-        <h3>Optimized Resource Allocation</h3>
-        <p>Efficient distribution of teachers and classrooms.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>Customizable Constraints</h3>
-        <p>Define lab durations, semester-specific rules, 
-        and teacher preferences easily.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="feature-card">
-        <h3>Real-Time Updates</h3>
-        <p>Instantly regenerate schedules after modifications.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # =====================
-# SYSTEM MODULES SECTION
-# =====================
-
-st.write("\n\n")
-st.markdown("## 🧭 System Modules")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>📚 Manage Subjects</h3>
-        <p>Add, edit and manage subject data.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Open Manage Subjects", key="subjects", use_container_width=True):
-        st.switch_page("pages/manage_subjects.py")
-
-with col2:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>👩‍🏫 Manage Teachers</h3>
-        <p>Maintain teacher records and assignments.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Open Manage Teachers", key="teachers", use_container_width=True):
-        st.switch_page("pages/manage_teachers.py")
-
-with col3:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>🏫 Manage Rooms</h3>
-        <p>Configure classrooms and lab allocations.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Open Manage Rooms", key="rooms", use_container_width=True):
-        st.switch_page("pages/manage_rooms.py")
-
-col4, col5, col6 = st.columns(3)
-
-with col4:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>📂 Upload Data</h3>
-        <p>Upload CSV files for scheduling.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Open Upload", key="upload", use_container_width=True):
-       st.switch_page("pages/upload_csv.py")
-
-with col5:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>⚡ Generate Timetable</h3>
-        <p>Run AI scheduling engine.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Open Generate", key="generate", use_container_width=True):
-        st.switch_page("pages/generate.py")
-
-with col6:
-    st.markdown("""
-    <div class="feature-card">
-        <h3>📅 View Timetable</h3>
-        <p>Visualize generated timetable.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Open View", key="view", use_container_width=True):
-        st.switch_page("pages/view.py")
-
-        # =====================
-# MODULE NAVIGATION
-# =====================
-
-st.write("\n\n")
-st.markdown("## 🧭 Quick Access")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("📚 Manage Subjects", use_container_width=True):
-        st.switch_page("pages/manage_subjects.py")
-
-with col2:
-    if st.button("👩‍🏫 Manage Teachers", use_container_width=True):
-        st.switch_page("pages/manage_teachers.py")
-
-with col3:
-    if st.button("🏫 Manage Rooms", use_container_width=True):
-        st.switch_page("pages/manage_rooms.py")
-
-col4, col5, col6 = st.columns(3)
-
-with col4:
-    if st.button("📂 Upload Data", use_container_width=True):
+    if st.button("📤  Upload CSV & Generate", use_container_width=True):
         st.switch_page("pages/upload_csv.py")
+with col2:
+    if st.button("📅  View Timetables", use_container_width=True):
+        st.switch_page("pages/timetable_viewer.py")
+with col3:
+    if st.button("👩‍🏫  Manage Teachers", use_container_width=True):
+        st.switch_page("pages/manage_teachers.py")
 
-with col5:
-    if st.button("⚡ Generate Timetable", use_container_width=True):
-        st.switch_page("pages/generate.py")
+st.markdown("<br>", unsafe_allow_html=True)
 
-with col6:
-    if st.button("📅 View Timetable", use_container_width=True):
-        st.switch_page("pages/view.py")
+# ── Departments ───────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="section-head">
+    <div class="section-title">DEPARTMENTS</div>
+    <div class="section-line"></div>
+</div>
+<div class="dept-grid">
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(99,102,241,0.15)">💻</div>
+        <div>
+            <div class="dept-name">Computer Science</div>
+            <div class="dept-sub">CS2A-CB · CS4A-CB · CS6A-CB · CS8A-CB</div>
+        </div>
+    </div>
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(236,72,153,0.15)">📡</div>
+        <div>
+            <div class="dept-name">Electronics & Comm</div>
+            <div class="dept-sub">EC2A-B · EC4A-B · EC6A-B · EC8A-B</div>
+        </div>
+    </div>
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(16,185,129,0.15)">⚡</div>
+        <div>
+            <div class="dept-name">Electrical Eng</div>
+            <div class="dept-sub">EE2 · EE4 · EE6 · EE8</div>
+        </div>
+    </div>
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(245,158,11,0.15)">⚙️</div>
+        <div>
+            <div class="dept-name">Mechanical Eng</div>
+            <div class="dept-sub">ME2 · ME4 · ME6 · ME8</div>
+        </div>
+    </div>
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(139,92,246,0.15)">🔬</div>
+        <div>
+            <div class="dept-name">Biomedical Eng</div>
+            <div class="dept-sub">EB2 · EB4 · EB6 · EB8</div>
+        </div>
+    </div>
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(6,182,212,0.15)">🌿</div>
+        <div>
+            <div class="dept-name">Electronics (EV)</div>
+            <div class="dept-sub">EV2 · EV4 · EV6</div>
+        </div>
+    </div>
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(248,113,113,0.15)">🎓</div>
+        <div>
+            <div class="dept-name">Computer Sci (CU)</div>
+            <div class="dept-sub">CU2 · CU8</div>
+        </div>
+    </div>
+    <div class="dept-card">
+        <div class="dept-dot" style="background:rgba(52,211,153,0.15)">🔮</div>
+        <div>
+            <div class="dept-name">EEE</div>
+            <div class="dept-sub">EEE · S6</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Footer ────────────────────────────────────────────────────────────────────
+st.markdown("""
+<div style="text-align:center; padding: 40px 0 20px; color: rgba(200,200,220,0.2);
+            font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em;">
+    MEC AI TIMETABLE SYSTEM &nbsp;·&nbsp; BUILT WITH D3QN + STABLE BASELINES3
+    &nbsp;·&nbsp; MODEL ENGINEERING COLLEGE, THRIKKAKARA
+</div>
+""", unsafe_allow_html=True)
