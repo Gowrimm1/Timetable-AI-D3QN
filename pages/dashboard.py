@@ -145,7 +145,7 @@ html, body, [data-testid="stAppViewContainer"] {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 12px;
-    margin-bottom: 32px;
+    margin-bottom: 80px;
 }
 .dept-card {
     background: rgba(255,255,255,0.03);
@@ -380,7 +380,7 @@ st.markdown("""
         <div class="dept-dot" style="background:rgba(16,185,129,0.15)">⚡</div>
         <div>
             <div class="dept-name">Electrical Eng</div>
-            <div class="dept-sub">EE2 · EE4 · EE6 · EE8</div>
+            <div class="dept-sub">EE2 · EE4 · EE6 · EE8 · EEE</div>
         </div>
     </div>
     <div class="dept-card">
@@ -408,14 +408,7 @@ st.markdown("""
         <div class="dept-dot" style="background:rgba(248,113,113,0.15)">🎓</div>
         <div>
             <div class="dept-name">Computer Sci (CU)</div>
-            <div class="dept-sub">CU2 · CU8</div>
-        </div>
-    </div>
-    <div class="dept-card">
-        <div class="dept-dot" style="background:rgba(52,211,153,0.15)">🔮</div>
-        <div>
-            <div class="dept-name">EEE</div>
-            <div class="dept-sub">EEE · S6</div>
+            <div class="dept-sub">CU2 · CU4 · CU6 · CU8</div>
         </div>
     </div>
 </div>
@@ -423,7 +416,7 @@ st.markdown("""
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""
-<div style="text-align:center; padding: 40px 0 20px; color: rgba(200,200,220,0.2);
+<div style="text-align:center; padding: 40px 0 80px; color: rgba(200,200,220,0.2);
             font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.1em;">
     MEC AI TIMETABLE SYSTEM &nbsp;·&nbsp; BUILT WITH D3QN + STABLE BASELINES3
     &nbsp;·&nbsp; MODEL ENGINEERING COLLEGE, THRIKKAKARA
