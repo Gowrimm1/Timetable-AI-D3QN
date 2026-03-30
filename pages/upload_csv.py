@@ -5,7 +5,6 @@ from copy import deepcopy
 
 st.set_page_config(page_title="Upload Data", layout="wide")
 st.title("📂 Upload MEC Subject Allotment CSV")
-st.markdown("Upload the **single combined CSV** to generate timetables for all semesters.")
 
 with st.expander("📥 Download CSV Template"):
     sample = """course_code,subject_name,teacher_code,division,semester,required_hours,room_type_needed,is_honours,scheme
@@ -16,25 +15,15 @@ CST302,CD,APR,C6A,S6,4,Theory,False,3+1+0"""
     st.download_button("⬇ Download Template", sample, "template.csv", "text/csv")
 
 st.divider()
-
 uploaded = st.file_uploader("Upload SubAllotment CSV", type=["csv"])
 
 REQUIRED = {"course_code","subject_name","teacher_code","division",
             "semester","required_hours","room_type_needed","is_honours"}
-
 FILLERS = [
-    {"course_code":"LIB",    "subject_name":"Library/Self Study",
-     "teacher_code":"LIB",   "required_hours":1,"room_type_needed":"Theory",
-     "is_honours":False,"scheme":""},
-    {"course_code":"PE",     "subject_name":"Physical Education",
-     "teacher_code":"PE",    "required_hours":1,"room_type_needed":"Theory",
-     "is_honours":False,"scheme":""},
-    {"course_code":"MENTOR", "subject_name":"Mentoring/Counseling",
-     "teacher_code":"HOD",   "required_hours":1,"room_type_needed":"Theory",
-     "is_honours":False,"scheme":""},
-    {"course_code":"SEMINAR","subject_name":"Seminar/Guest Lecture",
-     "teacher_code":"HOD",   "required_hours":1,"room_type_needed":"Theory",
-     "is_honours":False,"scheme":""},
+    {"course_code":"LIB",    "subject_name":"Library/Self Study",    "teacher_code":"LIB",  "required_hours":1,"room_type_needed":"Theory","is_honours":False,"scheme":""},
+    {"course_code":"PE",     "subject_name":"Physical Education",     "teacher_code":"PE",   "required_hours":1,"room_type_needed":"Theory","is_honours":False,"scheme":""},
+    {"course_code":"MENTOR", "subject_name":"Mentoring/Counseling",   "teacher_code":"HOD",  "required_hours":1,"room_type_needed":"Theory","is_honours":False,"scheme":""},
+    {"course_code":"SEMINAR","subject_name":"Seminar/Guest Lecture",  "teacher_code":"HOD",  "required_hours":1,"room_type_needed":"Theory","is_honours":False,"scheme":""},
 ]
 
 def is_lab_subject(row):
@@ -46,36 +35,30 @@ if uploaded:
     df = pd.read_csv(uploaded)
     df.columns = df.columns.str.strip().str.lower()
     missing = REQUIRED - set(df.columns)
-
     if missing:
         st.error(f"❌ Missing columns: {missing}")
     else:
-        # Fix room_type: Theory→Lab for lab subjects, Lab_Network→Lab
+        # Fix room_type
         df["room_type_needed"] = df.apply(
             lambda r: "Lab" if (is_lab_subject(r) and r["room_type_needed"]=="Theory")
                       else ("Lab" if r["room_type_needed"]=="Lab_Network"
-                      else r["room_type_needed"]),
-            axis=1
-        )
+                      else r["room_type_needed"]), axis=1)
 
-        # Pad divisions to 30 hours with fillers
+        # Pad to 30 hrs
         extras = []
         for div in df["division"].unique():
             sem   = df[df["division"]==div]["semester"].iloc[0]
             total = df[df["division"]==div]["required_hours"].sum()
-            fi    = 0
+            fi = 0
             while total < 30:
                 f = deepcopy(FILLERS[fi % len(FILLERS)])
-                f["division"] = div
-                f["semester"] = sem
-                extras.append(f)
-                total += 1
-                fi    += 1
+                f["division"] = div; f["semester"] = sem
+                extras.append(f); total += 1; fi += 1
         if extras:
             df = pd.concat([df, pd.DataFrame(extras)], ignore_index=True)
-            st.info(f"ℹ️ Added {len(extras)} filler slots to eliminate blank periods.")
+            st.info(f"ℹ️ Added {len(extras)} filler slots.")
 
-        col1, col2, col3 = st.columns(3)
+        col1,col2,col3 = st.columns(3)
         col1.metric("Total Rows", len(df))
         col2.metric("Semesters", df["semester"].nunique())
         col3.metric("Divisions", df["division"].nunique())
@@ -97,7 +80,7 @@ if uploaded:
                     cleaned_bytes = df.to_csv(index=False).encode()
                     resp = requests.post(
                         "http://127.0.0.1:8000/generate",
-                        files={"allotment_file": ("allotment.csv", cleaned_bytes, "text/csv")},
+                        files={"allotment_file":("allotment.csv", cleaned_bytes,"text/csv")},
                         data={"semesters": ",".join(selected)}
                     )
                     if resp.status_code == 200:
@@ -107,17 +90,36 @@ if uploaded:
                         else:
                             st.success("✅ Timetables Generated!")
                             st.session_state["timetable_result"] = result
+
                             div_keys = sorted([k for k in result if not k.startswith("raw")])
-                            raw_keys = [k for k in result if k.startswith("raw")]
-                            tabs = st.tabs(div_keys + ["📋 Full (All Rooms)"])
+                            raw_keys = sorted([k for k in result if k.startswith("raw")])
+
+                            # Division tabs + Full All Rooms tab
+                            all_tabs = st.tabs(div_keys + ["📋 Full (All Rooms)"])
+
                             for i, div in enumerate(div_keys):
-                                with tabs[i]:
-                                    st.dataframe(pd.DataFrame(result[div]), use_container_width=True)
-                            with tabs[-1]:
-                                raw_tabs = st.tabs(raw_keys) if raw_keys else []
-                                for rt, rk in zip(raw_tabs, raw_keys):
-                                    with rt:
-                                        st.dataframe(pd.DataFrame(result[rk]), use_container_width=True)
+                                with all_tabs[i]:
+                                    st.dataframe(pd.DataFrame(result[div]),
+                                                 use_container_width=True)
+
+                            # Full (All Rooms) — merge all raw semester tables into one
+                            with all_tabs[-1]:
+                                if raw_keys:
+                                    if len(raw_keys) == 1:
+                                        raw_df = pd.DataFrame(result[raw_keys[0]])
+                                    else:
+                                        frames = []
+                                        for rk in raw_keys:
+                                            rdf = pd.DataFrame(result[rk])
+                                            rdf.insert(0, "Semester", rk.replace("raw_",""))
+                                            frames.append(rdf)
+                                        raw_df = pd.concat(frames, ignore_index=True)
+
+                                    st.markdown("### 🏫 Full College Timetable — All Rooms")
+                                    st.dataframe(raw_df, use_container_width=True,
+                                                 height=600)
+                                else:
+                                    st.info("No raw timetable data available.")
                     else:
                         st.error(f"❌ Status {resp.status_code}: {resp.text}")
                 except requests.exceptions.ConnectionError:
